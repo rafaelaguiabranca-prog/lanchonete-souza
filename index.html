@@ -1100,4 +1100,1767 @@
                     </div>
 
                     <div class="pt-3 border-t border-orange-100 space-y-2">
-                      <button
+                      <button onclick="openProductFormModal('${p.id}')"
+                        class="w-full py-2.5 px-3 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-extrabold flex items-center justify-center gap-1.5">
+                        ✏️ Editar Nome & Preço
+                      </button>
+                      <div class="flex gap-2">
+                        <button onclick="openStockMovementModal('${p.id}', 'entrada')" class="flex-1 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold">
+                          + Entrada
+                        </button>
+                        <button onclick="openStockMovementModal('${p.id}', 'perda')" class="flex-1 py-2 px-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-extrabold">
+                          − Ajuste
+                        </button>
+                        <button onclick="confirmDeleteProduct('${p.id}')" class="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold" title="Excluir">
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function openProductFormModal(productId = null) {
+      const prod = productId ? state.products.find(p => p.id === productId) : null;
+      const existingCats = [...new Set(['Bebidas', 'Salgados', 'Doces', 'Lanches Prontos', 'Outros', ...state.products.map(p => p.category).filter(Boolean)])];
+
+      openModal(prod ? 'Editar Nome e Preço da Mercadoria' : 'Adicionar Nova Mercadoria', `
+        <form onsubmit="saveProductForm(event, '${prod ? prod.id : ''}')" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Nome do Item / Mercadoria *</label>
+            <input type="text" id="prod-name" required value="${prod ? escapeHTML(prod.name) : ''}" placeholder="Ex: Pastel de Carne, Coca Lata..."
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold text-base" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Categoria</label>
+            <input type="text" list="category-options" id="prod-cat" value="${prod ? escapeHTML(prod.category || 'Outros') : 'Bebidas'}"
+              placeholder="Escolha ou digite uma categoria"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none bg-white font-semibold" />
+            <datalist id="category-options">
+              ${existingCats.map(c => `<option value="${escapeHTML(c)}"></option>`).join('')}
+            </datalist>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Preço de Venda (R$) *</label>
+              <input type="text" inputmode="decimal" id="prod-sell" required
+                value="${prod ? formatMoneyInput(prod.sellPrice) : ''}" placeholder="Ex: 6,50"
+                class="w-full px-4 py-3 rounded-xl border-2 border-brand-500 focus:border-brand-700 focus:outline-none font-extrabold text-lg text-brand-600" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Preço de Custo (R$)</label>
+              <input type="text" inputmode="decimal" id="prod-buy"
+                value="${prod ? formatMoneyInput(prod.buyPrice) : ''}" placeholder="Ex: 3,20"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold text-base" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Estoque Atual *</label>
+              <input type="number" step="1" min="0" id="prod-stock" required value="${prod ? prod.stock : 10}"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Estoque Mínimo</label>
+              <input type="number" step="1" min="0" id="prod-min" required value="${prod ? prod.minStock : 5}"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+            </div>
+          </div>
+
+          <div class="pt-2 flex gap-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-sm shadow">
+              ${prod ? 'Salvar Alterações' : 'Adicionar Mercadoria'}
+            </button>
+          </div>
+        </form>
+      `);
+
+      setTimeout(() => {
+        const input = document.getElementById(prod ? 'prod-sell' : 'prod-name');
+        if (input) input.focus();
+      }, 80);
+    }
+
+    async function saveProductForm(e, prodId) {
+      e.preventDefault();
+      const name = document.getElementById('prod-name').value.trim();
+      const category = (document.getElementById('prod-cat').value || 'Outros').trim();
+      const sellPrice = parseMoney(document.getElementById('prod-sell').value);
+      const buyPrice = parseMoney(document.getElementById('prod-buy').value);
+      const stock = parseInt(document.getElementById('prod-stock').value, 10) || 0;
+      const minStock = parseInt(document.getElementById('prod-min').value, 10) || 0;
+
+      if (!name) {
+        showToast('Digite o nome da mercadoria.', 'warning');
+        return;
+      }
+
+      if (prodId) {
+        const idx = state.products.findIndex(p => p.id === prodId);
+        if (idx !== -1) {
+          state.products[idx] = { ...state.products[idx], name, category, buyPrice, sellPrice, stock, minStock };
+          // Atualiza nome e preço unitário caso o item esteja no carrinho atual
+          cart.forEach(c => {
+            if (c.productId === prodId) {
+              c.name = name;
+              c.unitPrice = sellPrice;
+            }
+          });
+        }
+        showToast('Nome e preço atualizados!', 'success');
+      } else {
+        const newProd = { id: generateId('p'), name, category, buyPrice, sellPrice, stock, minStock };
+        state.products.unshift(newProd);
+        if (stock > 0) {
+          state.stockLogs.unshift({
+            id: generateId('sl'),
+            date: new Date().toISOString(),
+            productId: newProd.id,
+            productName: newProd.name,
+            type: 'entrada',
+            qty: stock,
+            reason: 'Cadastro inicial'
+          });
+        }
+        showToast('Nova mercadoria adicionada!', 'success');
+      }
+
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+    }
+
+    function openStockMovementModal(productId, type = 'entrada') {
+      const prod = state.products.find(p => p.id === productId);
+      if (!prod) return;
+      const isEntry = type === 'entrada';
+
+      openModal(isEntry ? `Entrada: ${prod.name}` : `Ajuste / Perda: ${prod.name}`, `
+        <form onsubmit="saveStockMovement(event, '${prod.id}', '${type}')" class="space-y-4">
+          <div class="p-3.5 rounded-2xl bg-brand-50 text-sm">
+            Estoque atual: <strong>${prod.stock} unidades</strong>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">
+              ${isEntry ? 'Quantidade Recebida (+)' : 'Quantidade de Perda / Saída (−)'} *
+            </label>
+            <input type="number" min="1" step="1" id="mov-qty" required value="1"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none text-lg font-extrabold" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Motivo / Observação</label>
+            <input type="text" id="mov-reason" required value="${isEntry ? 'Reposição de mercadoria' : 'Produto vencido / avariado'}"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none text-sm" />
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl ${isEntry ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'} text-white font-extrabold text-sm">
+              Confirmar
+            </button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveStockMovement(e, productId, type) {
+      e.preventDefault();
+      const prod = state.products.find(p => p.id === productId);
+      if (!prod) return;
+      const qty = parseInt(document.getElementById('mov-qty').value, 10) || 0;
+      const reason = document.getElementById('mov-reason').value.trim();
+      if (qty <= 0) return;
+
+      if (type === 'entrada') {
+        prod.stock = Number(prod.stock) + qty;
+      } else {
+        prod.stock = Math.max(0, Number(prod.stock) - qty);
+      }
+
+      state.stockLogs.unshift({
+        id: generateId('sl'),
+        date: new Date().toISOString(),
+        productId: prod.id,
+        productName: prod.name,
+        type,
+        qty,
+        reason
+      });
+
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast(type === 'entrada' ? `Entrada de +${qty} un. registrada!` : `Baixa de -${qty} un. registrada!`, 'success');
+    }
+
+    function confirmDeleteProduct(productId) {
+      const prod = state.products.find(p => p.id === productId);
+      if (!prod) return;
+      openModal('Excluir Mercadoria', `
+        <div class="space-y-4">
+          <p class="text-sm text-brand-900">Tem certeza que deseja excluir <strong>${escapeHTML(prod.name)}</strong>?</p>
+          <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button onclick="deleteProduct('${prod.id}')" class="flex-1 py-3 rounded-xl bg-rose-600 text-white font-extrabold text-sm">Excluir</button>
+          </div>
+        </div>
+      `);
+    }
+
+    async function deleteProduct(productId) {
+      state.products = state.products.filter(p => p.id !== productId);
+      cart = cart.filter(c => c.productId !== productId);
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast('Mercadoria excluída.', 'info');
+    }
+
+    function openStockLogsModal() {
+      openModal('Histórico de Movimentações de Estoque', `
+        <div class="space-y-2.5">
+          ${state.stockLogs.length === 0
+            ? '<p class="text-sm text-gray-500">Nenhuma movimentação registrada.</p>'
+            : state.stockLogs.slice(0, 40).map(log => `
+              <div class="p-3 rounded-2xl border border-orange-100 bg-brand-50/50 flex items-center justify-between gap-2 text-xs">
+                <div>
+                  <p class="font-bold text-brand-900">${escapeHTML(log.productName)}</p>
+                  <p class="text-brand-800/75">${escapeHTML(log.reason)} • ${formatDateTimeBR(log.date)}</p>
+                </div>
+                <span class="px-2.5 py-1 rounded-full font-extrabold ${
+                  log.type === 'entrada' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'
+                }">
+                  ${log.type === 'entrada' ? '+' : '-'}${log.qty}
+                </span>
+              </div>
+            `).join('')
+          }
+        </div>
+      `, 'max-w-xl');
+    }
+
+    /*************************************************************************
+     * 8. TELA 3: FRENTE DE CAIXA (PDV / VENDAS)
+     *************************************************************************/
+    let saleDiscount = 0;
+    let salePaymentMethod = 'Dinheiro';
+    let saleCashReceived = '';
+    let saleCustomerId = '';
+    let saleDueDate = daysAgoISO(-7).slice(0, 10);
+
+    function renderVendas() {
+      const categories = ['Todos', ...new Set(state.products.map(p => p.category || 'Outros'))];
+      const filtered = state.products.filter(p => {
+        const matchCat = selectedCategory === 'Todos' || (p.category || 'Outros') === selectedCategory;
+        const matchSearch = p.name.toLowerCase().includes(productSearch.toLowerCase());
+        return matchCat && matchSearch;
+      });
+
+      const subtotal = cart.reduce((acc, item) => acc + item.qty * item.unitPrice, 0);
+      const total = Math.max(0, Number((subtotal - (Number(saleDiscount) || 0)).toFixed(2)));
+      const cashReceivedNum = parseMoney(saleCashReceived);
+      const change = salePaymentMethod === 'Dinheiro' && cashReceivedNum > total ? cashReceivedNum - total : 0;
+
+      return `
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div class="lg:col-span-7 space-y-4">
+            <div class="bg-white p-4 rounded-3xl border border-orange-200/80 shadow-xs space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h2 class="text-xl font-extrabold text-brand-900">🛒 Frente de Caixa — ${escapeHTML(state.settings.storeName)}</h2>
+                <button type="button" onclick="openProductFormModal()" class="px-3 py-1.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-900 text-xs font-extrabold shrink-0">
+                  + Mercadoria
+                </button>
+              </div>
+
+              <input type="text" value="${escapeHTML(productSearch)}" oninput="productSearch = this.value; renderCurrentPage();"
+                placeholder="🔍 Pesquisar salgado, bebida, doce..."
+                class="w-full px-4 py-3 rounded-2xl border border-orange-200 focus:border-brand-600 focus:outline-none text-sm font-medium" />
+
+              <div class="flex gap-2 overflow-x-auto pb-1">
+                ${categories.map(cat => `
+                  <button onclick="selectedCategory = '${escapeHTML(cat)}'; renderCurrentPage();"
+                    class="px-4 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition ${
+                      selectedCategory === cat
+                        ? 'bg-brand-600 text-white shadow-xs'
+                        : 'bg-brand-50 text-brand-800 hover:bg-brand-100'
+                    }">
+                    ${escapeHTML(cat)}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              ${filtered.map(p => {
+                const inCart = cart.find(c => c.productId === p.id);
+                const outOfStock = Number(p.stock) <= 0;
+                return `
+                  <div class="p-4 rounded-3xl border transition flex flex-col justify-between min-h-[132px] relative ${
+                    inCart
+                      ? 'bg-brand-50 border-brand-600 ring-2 ring-brand-500/30 shadow-sm'
+                      : 'bg-white border-orange-200/80 hover:border-brand-500 shadow-xs'
+                  }">
+                    ${inCart ? `<span class="absolute top-3 right-3 w-7 h-7 rounded-full bg-brand-600 text-white font-extrabold text-xs flex items-center justify-center shadow">${inCart.qty}</span>` : ''}
+                    <button type="button" onclick="addToCart('${p.id}')" class="text-left flex-1 active:scale-98">
+                      <span class="text-[10px] font-bold uppercase text-brand-800/65">${escapeHTML(p.category || 'Item')}</span>
+                      <p class="font-extrabold text-sm text-brand-900 leading-snug mt-0.5 line-clamp-2">${escapeHTML(p.name)}</p>
+                    </button>
+                    <div class="mt-3 pt-2 border-t border-orange-100 flex items-center justify-between gap-1">
+                      <button type="button" onclick="openProductFormModal('${p.id}')" title="Editar nome ou preço"
+                        class="font-extrabold text-base text-brand-600 hover:underline flex items-center gap-1">
+                        <span>${formatBRL(p.sellPrice)}</span>
+                        <span class="text-xs">✏️</span>
+                      </button>
+                      <span class="text-[11px] font-bold ${outOfStock ? 'text-rose-600' : 'text-brand-800/70'}">
+                        ${outOfStock ? 'Zerado' : p.stock + ' un.'}
+                      </span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="lg:col-span-5 bg-white p-5 rounded-3xl border border-orange-200 shadow-md space-y-4 lg:sticky lg:top-5">
+            <div class="flex items-center justify-between border-b border-orange-100 pb-3">
+              <h3 class="font-extrabold text-lg text-brand-900">🧾 Pedido Atual</h3>
+              ${cart.length > 0
+                ? `<button onclick="clearCart()" class="text-xs font-bold text-rose-600 hover:underline">Limpar</button>`
+                : ''
+              }
+            </div>
+
+            <div class="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              ${cart.length === 0
+                ? `<div class="py-8 text-center text-brand-800/60 text-sm">Selecione mercadorias ao lado para iniciar a venda.</div>`
+                : cart.map(item => `
+                  <div class="p-3 rounded-2xl bg-brand-50/70 border border-orange-100 flex items-center justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <p class="font-bold text-sm text-brand-900 truncate">${escapeHTML(item.name)}</p>
+                      <button type="button" onclick="openProductFormModal('${item.productId}')" class="text-xs text-brand-700 hover:underline text-left">
+                        ${formatBRL(item.unitPrice)} un. ✏️ • Sub: <strong>${formatBRL(item.qty * item.unitPrice)}</strong>
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <button onclick="updateCartQty('${item.productId}', -1)" class="w-8 h-8 rounded-xl bg-white border border-orange-200 font-extrabold text-brand-900 hover:bg-orange-100">−</button>
+                      <span class="w-7 text-center font-extrabold text-sm">${item.qty}</span>
+                      <button onclick="updateCartQty('${item.productId}', 1)" class="w-8 h-8 rounded-xl bg-brand-600 text-white font-extrabold hover:bg-brand-700">+</button>
+                    </div>
+                  </div>
+                `).join('')
+              }
+            </div>
+
+            <div class="space-y-3 pt-2 border-t border-orange-100">
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-[11px] font-bold uppercase text-brand-800 mb-1">Desconto (R$)</label>
+                  <input type="text" inputmode="decimal" value="${saleDiscount ? formatMoneyInput(saleDiscount) : ''}"
+                    oninput="saleDiscount = parseMoney(this.value); renderCurrentPage();"
+                    placeholder="0,00"
+                    class="w-full px-3 py-2.5 rounded-xl border border-orange-200 text-sm font-bold" />
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold uppercase text-brand-800 mb-1">Cliente ${salePaymentMethod === 'Fiado' ? '*' : '(Opcional)'}</label>
+                  <div class="flex gap-1">
+                    <select onchange="saleCustomerId = this.value; renderCurrentPage();"
+                      class="w-full px-2.5 py-2.5 rounded-xl border border-orange-200 text-xs font-bold bg-white">
+                      <option value="">Consumidor Final</option>
+                      ${state.customers.map(c => `<option value="${c.id}" ${saleCustomerId === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('')}
+                    </select>
+                    <button type="button" onclick="openQuickCustomerModal()" title="Novo Cliente"
+                      class="px-3 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-900 font-extrabold text-sm shrink-0">+</button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase text-brand-800 mb-1.5">Forma de Pagamento</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  ${['Dinheiro', 'Pix', 'Cartão', 'Fiado'].map(method => `
+                    <button type="button" onclick="salePaymentMethod = '${method}'; renderCurrentPage();"
+                      class="py-2.5 px-2 rounded-xl text-xs font-extrabold border transition ${
+                        salePaymentMethod === method
+                          ? 'bg-brand-900 text-white border-brand-900 shadow-xs'
+                          : 'bg-white text-brand-900 border-orange-200 hover:bg-brand-50'
+                      }">
+                      ${method === 'Dinheiro' ? '💵 Dinheiro' : method === 'Pix' ? '💠 Pix' : method === 'Cartão' ? '💳 Cartão' : '📒 Fiado'}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+
+              ${salePaymentMethod === 'Dinheiro' ? `
+                <div class="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 grid grid-cols-2 gap-3 items-center">
+                  <div>
+                    <label class="block text-[11px] font-bold uppercase text-emerald-900 mb-1">Valor Recebido (R$)</label>
+                    <input type="text" inputmode="decimal" value="${saleCashReceived}"
+                      oninput="saleCashReceived = this.value; renderCurrentPage();"
+                      placeholder="${total.toFixed(2).replace('.', ',')}"
+                      class="w-full px-3 py-2 rounded-xl border border-emerald-300 bg-white font-extrabold text-sm" />
+                  </div>
+                  <div class="text-right">
+                    <span class="block text-[11px] font-bold uppercase text-emerald-800">Troco a Devolver</span>
+                    <span class="text-xl font-extrabold text-emerald-700">${formatBRL(change)}</span>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${salePaymentMethod === 'Pix' ? `
+                <div class="p-3 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-2">
+                  <div class="min-w-0">
+                    <span class="block text-[10px] font-bold uppercase text-sky-800">Chave Pix — ${escapeHTML(state.settings.storeName)}</span>
+                    <strong class="text-xs font-mono text-sky-950 truncate block">${escapeHTML(state.settings.pixKey || 'Não configurada')}</strong>
+                  </div>
+                  <button type="button" onclick="copyTextFallback('${escapeHTML(state.settings.pixKey || '')}')"
+                    class="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold shrink-0">
+                    Copiar Pix
+                  </button>
+                </div>
+              ` : ''}
+
+              ${salePaymentMethod === 'Fiado' ? `
+                <div class="p-3 rounded-2xl bg-amber-50 border border-amber-300 space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <label class="text-xs font-bold text-amber-900">Vencimento da Dívida:</label>
+                    <input type="date" value="${saleDueDate}" onchange="saleDueDate = this.value"
+                      class="px-3 py-1.5 rounded-xl border border-amber-300 bg-white text-xs font-bold" />
+                  </div>
+                  ${!saleCustomerId ? `<p class="text-[11px] font-bold text-rose-700">⚠️ Selecione ou cadastre o cliente acima para lançar no fiado.</p>` : ''}
+                </div>
+              ` : ''}
+
+              <div class="pt-3 border-t border-orange-200 flex items-center justify-between">
+                <div>
+                  <span class="text-xs font-bold uppercase text-brand-800/75 block">Total a Pagar</span>
+                  <span class="text-2xl font-extrabold text-brand-900">${formatBRL(total)}</span>
+                </div>
+                <button type="button" onclick="finalizeSale()"
+                  class="px-6 py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-sm shadow-lg shadow-brand-600/30 transition">
+                  ✅ Finalizar Venda
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function addToCart(productId) {
+      const prod = state.products.find(p => p.id === productId);
+      if (!prod) return;
+      const existing = cart.find(c => c.productId === productId);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({
+          productId: prod.id,
+          name: prod.name,
+          unitPrice: Number(prod.sellPrice) || 0,
+          qty: 1
+        });
+      }
+      renderCurrentPage();
+    }
+
+    function updateCartQty(productId, delta) {
+      const idx = cart.findIndex(c => c.productId === productId);
+      if (idx === -1) return;
+      cart[idx].qty += delta;
+      if (cart[idx].qty <= 0) {
+        cart.splice(idx, 1);
+      }
+      renderCurrentPage();
+    }
+
+    function clearCart() {
+      cart = [];
+      saleDiscount = 0;
+      saleCashReceived = '';
+      renderCurrentPage();
+    }
+
+    async function finalizeSale() {
+      if (cart.length === 0) {
+        showToast('Adicione pelo menos uma mercadoria ao pedido.', 'warning');
+        return;
+      }
+
+      if (salePaymentMethod === 'Fiado' && !saleCustomerId) {
+        showToast('Selecione um cliente para registrar a venda no Fiado.', 'warning');
+        return;
+      }
+
+      const subtotal = cart.reduce((acc, item) => acc + item.qty * item.unitPrice, 0);
+      const discount = Math.min(subtotal, Number(saleDiscount) || 0);
+      const total = Number((subtotal - discount).toFixed(2));
+      const cashReceivedNum = parseMoney(saleCashReceived) || total;
+      const change = salePaymentMethod === 'Dinheiro' && cashReceivedNum > total
+        ? Number((cashReceivedNum - total).toFixed(2))
+        : 0;
+
+      const customer = saleCustomerId ? state.customers.find(c => c.id === saleCustomerId) : null;
+      const saleId = 'V' + String(state.sales.length + 101);
+      const nowISO = new Date().toISOString();
+
+      const saleItems = cart.map(c => ({
+        productId: c.productId,
+        name: c.name,
+        qty: c.qty,
+        unitPrice: c.unitPrice,
+        total: Number((c.qty * c.unitPrice).toFixed(2))
+      }));
+
+      saleItems.forEach(item => {
+        const prod = state.products.find(p => p.id === item.productId);
+        if (prod) {
+          prod.stock = Math.max(0, Number(prod.stock) - item.qty);
+        }
+      });
+
+      const newSale = {
+        id: saleId,
+        date: nowISO,
+        items: saleItems,
+        subtotal: Number(subtotal.toFixed(2)),
+        discount,
+        total,
+        paymentMethod: salePaymentMethod,
+        amountPaid: salePaymentMethod === 'Dinheiro' ? cashReceivedNum : total,
+        change,
+        customerId: customer ? customer.id : '',
+        customerName: customer ? customer.name : 'Consumidor Final'
+      };
+      state.sales.unshift(newSale);
+
+      if (salePaymentMethod === 'Fiado' && customer) {
+        customer.ledger = customer.ledger || [];
+        customer.ledger.push({
+          id: generateId('ldg'),
+          type: 'purchase',
+          date: nowISO,
+          total,
+          items: saleItems
+        });
+        if (saleDueDate) {
+          customer.dueDate = saleDueDate;
+        }
+      } else {
+        state.cashMovements.unshift({
+          id: generateId('cm'),
+          date: nowISO,
+          type: 'entrada',
+          category: 'Venda PDV',
+          description: `Venda #${saleId} (${newSale.customerName})`,
+          method: salePaymentMethod,
+          amount: total
+        });
+      }
+
+      cart = [];
+      saleDiscount = 0;
+      saleCashReceived = '';
+      await saveState();
+      renderCurrentPage();
+      showToast(`Venda #${saleId} registrada com sucesso!`, 'success');
+      openSaleReceiptModal(saleId);
+    }
+
+    function openSaleReceiptModal(saleId) {
+      const sale = state.sales.find(s => s.id === saleId);
+      if (!sale) return;
+      const st = state.settings;
+
+      const receiptHTML = `
+        <div class="font-mono text-xs text-black space-y-2">
+          <div class="text-center border-b border-dashed border-gray-400 pb-2">
+            <strong class="text-sm uppercase block">${escapeHTML(st.storeName)}</strong>
+            ${st.address ? `<div>${escapeHTML(st.address)}</div>` : ''}
+            ${st.phone ? `<div>Tel: ${escapeHTML(st.phone)}</div>` : ''}
+          </div>
+          <div class="border-b border-dashed border-gray-400 pb-2">
+            <div><strong>COMPROVANTE #${escapeHTML(sale.id)}</strong></div>
+            <div>Data: ${formatDateTimeBR(sale.date)}</div>
+            <div>Cliente: ${escapeHTML(sale.customerName)}</div>
+          </div>
+          <div class="border-b border-dashed border-gray-400 pb-2 space-y-1">
+            ${sale.items.map(it => `
+              <div class="flex justify-between">
+                <span>${it.qty}x ${escapeHTML(it.name)}</span>
+                <span>${formatBRL(it.total)}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between"><span>Subtotal:</span><span>${formatBRL(sale.subtotal)}</span></div>
+            ${sale.discount > 0 ? `<div class="flex justify-between"><span>Desconto:</span><span>-${formatBRL(sale.discount)}</span></div>` : ''}
+            <div class="flex justify-between font-bold text-sm"><span>TOTAL:</span><span>${formatBRL(sale.total)}</span></div>
+            <div class="flex justify-between"><span>Forma Pagto:</span><span>${escapeHTML(sale.paymentMethod)}</span></div>
+            ${sale.paymentMethod === 'Dinheiro' ? `
+              <div class="flex justify-between"><span>Recebido:</span><span>${formatBRL(sale.amountPaid)}</span></div>
+              <div class="flex justify-between"><span>Troco:</span><span>${formatBRL(sale.change)}</span></div>
+            ` : ''}
+          </div>
+          <div class="text-center border-t border-dashed border-gray-400 pt-2 text-[11px]">
+            ${escapeHTML(st.receiptFooter || '')}
+          </div>
+        </div>
+      `;
+
+      const plainText = [
+        `*${st.storeName.toUpperCase()}*`,
+        `Comprovante #${sale.id} - ${formatDateTimeBR(sale.date)}`,
+        `Cliente: ${sale.customerName}`,
+        `--------------------------------`,
+        ...sale.items.map(it => `${it.qty}x ${it.name} — ${formatBRL(it.total)}`),
+        `--------------------------------`,
+        sale.discount > 0 ? `Desconto: -${formatBRL(sale.discount)}` : '',
+        `*TOTAL: ${formatBRL(sale.total)}*`,
+        `Pagamento: ${sale.paymentMethod}`,
+        sale.change > 0 ? `Troco: ${formatBRL(sale.change)}` : '',
+        st.receiptFooter || ''
+      ].filter(Boolean).join('\n');
+
+      const cust = sale.customerId ? state.customers.find(c => c.id === sale.customerId) : null;
+
+      openModal(`Comprovante de Venda #${sale.id}`, `
+        <div class="space-y-4">
+          <div class="p-4 rounded-2xl bg-brand-50 border border-orange-200">
+            ${receiptHTML}
+          </div>
+          <div class="grid grid-cols-2 gap-2.5">
+            <button onclick='printDocument(${JSON.stringify(receiptHTML)}, ${JSON.stringify(plainText)})'
+              class="py-3 px-4 rounded-xl bg-brand-900 hover:bg-brand-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5">
+              🖨️ Imprimir (${escapeHTML(st.printerWidth)})
+            </button>
+            <button onclick='openWhatsApp(${JSON.stringify(cust ? cust.whatsapp : '')}, ${JSON.stringify(plainText)})'
+              class="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5">
+              📲 Enviar WhatsApp
+            </button>
+          </div>
+          <button onclick="closeModal()" class="w-full py-3 rounded-xl bg-brand-100 text-brand-900 font-bold text-sm">
+            Fechar / Nova Venda
+          </button>
+        </div>
+      `);
+    }
+
+    function openQuickCustomerModal() {
+      openModal('Cadastro Rápido de Cliente', `
+        <form onsubmit="saveQuickCustomer(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Nome Completo *</label>
+            <input type="text" id="qc-name" required placeholder="Ex: Carlos Eduardo"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">WhatsApp (com DDD) *</label>
+            <input type="tel" id="qc-whats" required placeholder="Ex: 11999998888"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Observações</label>
+            <input type="text" id="qc-notes" placeholder="Opcional"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none text-sm" />
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl bg-brand-600 text-white font-extrabold text-sm">Cadastrar e Selecionar</button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveQuickCustomer(e) {
+      e.preventDefault();
+      const name = document.getElementById('qc-name').value.trim();
+      const whatsapp = document.getElementById('qc-whats').value.trim();
+      const notes = document.getElementById('qc-notes').value.trim();
+      if (!name) return;
+
+      const newCust = {
+        id: generateId('c'),
+        name,
+        whatsapp,
+        createdAt: new Date().toISOString(),
+        dueDate: saleDueDate || daysAgoISO(-7).slice(0, 10),
+        notes,
+        ledger: []
+      };
+      state.customers.unshift(newCust);
+      saleCustomerId = newCust.id;
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast(`Cliente ${name} cadastrado e selecionado!`, 'success');
+    }
+
+    /*************************************************************************
+     * 9. TELA 4 & 5: CADERNETA DE FIADOS + EXTRATO COMERCIAL DETALHADO
+     *************************************************************************/
+    let fiadoSearch = '';
+
+    function renderFiados() {
+      const list = state.customers.filter(c => {
+        const matchSearch = c.name.toLowerCase().includes(fiadoSearch.toLowerCase()) ||
+          (c.whatsapp || '').includes(fiadoSearch);
+        if (!matchSearch) return false;
+        const status = getDueStatus(c);
+        const { balance } = getCustomerSummary(c);
+        if (fiadoFilter === 'devedores') return balance > 0;
+        if (fiadoFilter === 'vencidos') return status === 'atrasada' || status === 'hoje';
+        if (fiadoFilter === 'quitados') return balance <= 0;
+        return true;
+      });
+
+      const totalGeralReceber = state.customers.reduce((acc, c) => acc + getCustomerSummary(c).balance, 0);
+
+      return `
+        <div class="space-y-5">
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-extrabold text-brand-900">📒 Caderneta de Fiados — ${escapeHTML(state.settings.storeName)}</h2>
+              <p class="text-sm text-brand-800/75">Total a receber: <strong class="text-brand-600 text-base">${formatBRL(totalGeralReceber)}</strong></p>
+            </div>
+            <button onclick="openCustomerFormModal()" class="px-5 py-3.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-sm shadow-md">
+              + Novo Cliente Fiado
+            </button>
+          </div>
+
+          <div class="bg-white p-4 rounded-3xl border border-orange-200/80 shadow-xs space-y-3">
+            <input type="text" value="${escapeHTML(fiadoSearch)}" oninput="fiadoSearch = this.value; renderCurrentPage();"
+              placeholder="🔍 Buscar cliente por nome ou WhatsApp..."
+              class="w-full px-4 py-3 rounded-2xl border border-orange-200 focus:border-brand-600 focus:outline-none text-sm font-medium" />
+
+            <div class="flex gap-2 overflow-x-auto pb-1">
+              ${[
+                { id: 'todos', label: 'Todos Clientes' },
+                { id: 'devedores', label: 'Com Saldo Devedor' },
+                { id: 'vencidos', label: '⚠️ Vencidos / Hoje' },
+                { id: 'quitados', label: '✅ Quitados' }
+              ].map(tab => `
+                <button onclick="fiadoFilter = '${tab.id}'; renderCurrentPage();"
+                  class="px-4 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap ${
+                    fiadoFilter === tab.id ? 'bg-brand-900 text-white' : 'bg-brand-50 text-brand-800 hover:bg-brand-100'
+                  }">
+                  ${tab.label}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            ${list.length === 0
+              ? `<div class="col-span-full bg-white p-8 rounded-3xl text-center text-brand-800/70">Nenhum cliente encontrado neste filtro.</div>`
+              : list.map(c => {
+                const sum = getCustomerSummary(c);
+                const status = getDueStatus(c);
+                return `
+                  <div class="bg-white p-5 rounded-3xl border ${status === 'atrasada' ? 'border-rose-300' : 'border-orange-200/80'} shadow-xs flex flex-col justify-between gap-4">
+                    <div>
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <h3 class="font-extrabold text-lg text-brand-900">${escapeHTML(c.name)}</h3>
+                          <p class="text-xs text-brand-800/75">📱 ${escapeHTML(c.whatsapp || 'Sem WhatsApp')} • Cadastro: ${formatDateBR(c.createdAt)}</p>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
+                          status === 'atrasada' ? 'bg-rose-100 text-rose-700' :
+                          status === 'hoje' ? 'bg-amber-100 text-amber-800' :
+                          status === 'quitado' ? 'bg-emerald-100 text-emerald-800' :
+                          'bg-sky-100 text-sky-800'
+                        }">
+                          ${status === 'atrasada' ? '⚠️ Vencida (' + formatDateBR(c.dueDate) + ')' :
+                            status === 'hoje' ? '🔔 Vence Hoje' :
+                            status === 'quitado' ? '✅ Quitado' :
+                            'Vence: ' + formatDateBR(c.dueDate)}
+                        </span>
+                      </div>
+
+                      ${c.notes ? `<p class="mt-2 text-xs text-brand-800/80 bg-brand-50/70 p-2.5 rounded-xl">${escapeHTML(c.notes)}</p>` : ''}
+
+                      <div class="mt-3 grid grid-cols-3 gap-2 text-center bg-brand-50 p-3 rounded-2xl">
+                        <div>
+                          <span class="text-[10px] font-bold uppercase text-brand-800/70 block">Compras</span>
+                          <strong class="text-xs sm:text-sm text-brand-900">${formatBRL(sum.totalPurchases)}</strong>
+                        </div>
+                        <div>
+                          <span class="text-[10px] font-bold uppercase text-brand-800/70 block">Pago</span>
+                          <strong class="text-xs sm:text-sm text-emerald-700">${formatBRL(sum.totalPayments)}</strong>
+                        </div>
+                        <div>
+                          <span class="text-[10px] font-bold uppercase text-brand-800/70 block">Saldo Devedor</span>
+                          <strong class="text-sm sm:text-base ${sum.balance > 0 ? 'text-rose-600' : 'text-emerald-700'}">${formatBRL(sum.balance)}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="pt-3 border-t border-orange-100 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button onclick="openCustomerStatementModal('${c.id}')"
+                        class="py-2.5 px-2 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-extrabold">
+                        📄 Extrato Detalhado
+                      </button>
+                      <button onclick="sendCustomerStatementWhatsApp('${c.id}')"
+                        class="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold">
+                        📲 Cobrar Whats
+                      </button>
+                      <button onclick="openRegisterPaymentModal('${c.id}')"
+                        class="py-2.5 px-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-extrabold">
+                        💵 Receber Pagto
+                      </button>
+                      <div class="flex gap-1">
+                        <button onclick="openCustomerFormModal('${c.id}')" class="flex-1 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-900 text-xs font-bold" title="Editar Cliente">
+                          ✏️
+                        </button>
+                        <button onclick="startFiadoSaleForCustomer('${c.id}')" class="flex-1 py-2.5 rounded-xl bg-orange-100 hover:bg-orange-200 text-brand-900 text-xs font-bold" title="Nova Compra Fiada">
+                          +🛒
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function startFiadoSaleForCustomer(customerId) {
+      saleCustomerId = customerId;
+      salePaymentMethod = 'Fiado';
+      navigate('vendas');
+    }
+
+    function openCustomerFormModal(customerId = null) {
+      const cust = customerId ? state.customers.find(c => c.id === customerId) : null;
+      openModal(cust ? 'Editar Cliente' : 'Cadastrar Cliente (Caderneta)', `
+        <form onsubmit="saveCustomerForm(event, '${cust ? cust.id : ''}')" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Nome Completo *</label>
+            <input type="text" id="cust-name" required value="${cust ? escapeHTML(cust.name) : ''}"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Número de WhatsApp *</label>
+              <input type="tel" id="cust-whats" required value="${cust ? escapeHTML(cust.whatsapp || '') : ''}" placeholder="11999998888"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Data de Vencimento</label>
+              <input type="date" id="cust-due" value="${cust && cust.dueDate ? cust.dueDate : daysAgoISO(-7).slice(0, 10)}"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Observações</label>
+            <textarea id="cust-notes" rows="2" class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none text-sm">${cust ? escapeHTML(cust.notes || '') : ''}</textarea>
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl bg-brand-600 text-white font-extrabold text-sm">Salvar Cliente</button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveCustomerForm(e, customerId) {
+      e.preventDefault();
+      const name = document.getElementById('cust-name').value.trim();
+      const whatsapp = document.getElementById('cust-whats').value.trim();
+      const dueDate = document.getElementById('cust-due').value;
+      const notes = document.getElementById('cust-notes').value.trim();
+      if (!name) return;
+
+      if (customerId) {
+        const cust = state.customers.find(c => c.id === customerId);
+        if (cust) {
+          cust.name = name;
+          cust.whatsapp = whatsapp;
+          cust.dueDate = dueDate;
+          cust.notes = notes;
+        }
+        showToast('Dados do cliente atualizados!', 'success');
+      } else {
+        state.customers.unshift({
+          id: generateId('c'),
+          name,
+          whatsapp,
+          createdAt: new Date().toISOString(),
+          dueDate,
+          notes,
+          ledger: []
+        });
+        showToast('Cliente cadastrado na caderneta!', 'success');
+      }
+
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+    }
+
+    function openRegisterPaymentModal(customerId) {
+      const cust = state.customers.find(c => c.id === customerId);
+      if (!cust) return;
+      const sum = getCustomerSummary(cust);
+
+      openModal(`Registrar Pagamento — ${cust.name}`, `
+        <form onsubmit="saveCustomerPayment(event, '${cust.id}')" class="space-y-4">
+          <div class="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+            <span class="text-sm font-bold text-amber-950">Saldo Devedor Atual:</span>
+            <strong class="text-xl font-extrabold text-rose-600">${formatBRL(sum.balance)}</strong>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Valor Recebido (R$) *</label>
+            <input type="text" inputmode="decimal" id="pay-amount" required value="${formatMoneyInput(sum.balance)}"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none text-lg font-extrabold text-emerald-700" />
+            <div class="flex gap-2 mt-1.5">
+              <button type="button" onclick="document.getElementById('pay-amount').value = '${formatMoneyInput(sum.balance)}'" class="text-xs font-bold text-brand-600 underline">Valor Integral</button>
+              <button type="button" onclick="document.getElementById('pay-amount').value = '${formatMoneyInput(sum.balance / 2)}'" class="text-xs font-bold text-brand-800 underline">Metade (50%)</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Forma de Recebimento (Entra no Caixa)</label>
+            <select id="pay-method" class="w-full px-4 py-3 rounded-xl border border-orange-200 bg-white font-bold">
+              <option value="Pix">💠 Pix</option>
+              <option value="Dinheiro">💵 Dinheiro</option>
+              <option value="Cartão">💳 Cartão</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Observação / Próximo Vencimento (Opcional)</label>
+            <input type="text" id="pay-note" placeholder="Ex: Pagamento parcial"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 text-sm mb-2" />
+            <input type="date" id="pay-next-due" value="${cust.dueDate || ''}"
+              class="w-full px-4 py-2.5 rounded-xl border border-orange-200 text-xs font-bold" />
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm shadow">
+              ✅ Confirmar Recebimento
+            </button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveCustomerPayment(e, customerId) {
+      e.preventDefault();
+      const cust = state.customers.find(c => c.id === customerId);
+      if (!cust) return;
+      const amount = parseMoney(document.getElementById('pay-amount').value);
+      const method = document.getElementById('pay-method').value;
+      const note = document.getElementById('pay-note').value.trim();
+      const nextDue = document.getElementById('pay-next-due').value;
+      if (amount <= 0) return;
+
+      const nowISO = new Date().toISOString();
+
+      cust.ledger = cust.ledger || [];
+      cust.ledger.push({
+        id: generateId('pay'),
+        type: 'payment',
+        date: nowISO,
+        amount: Number(amount.toFixed(2)),
+        method,
+        note: note || `Recebimento via ${method}`
+      });
+
+      if (nextDue) cust.dueDate = nextDue;
+
+      state.cashMovements.unshift({
+        id: generateId('cm'),
+        date: nowISO,
+        type: 'entrada',
+        category: 'Recebimento Fiado',
+        description: `Recebimento Fiado — ${cust.name}`,
+        method,
+        amount: Number(amount.toFixed(2))
+      });
+
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast(`Pagamento de ${formatBRL(amount)} registrado e lançado no caixa!`, 'success');
+    }
+
+    function buildCustomerStatementData(customerId) {
+      const cust = state.customers.find(c => c.id === customerId);
+      if (!cust) return null;
+      const sum = getCustomerSummary(cust);
+      const st = state.settings;
+      const storeName = (st.storeName || 'Lanchonete Souza').toUpperCase();
+      const periodText = sum.firstDate
+        ? `${formatDateBR(sum.firstDate)} a ${formatDateBR(sum.lastDate)}`
+        : formatDateBR(todayISO());
+
+      const lines = [
+        `*${storeName} — EXTRATO DE CONSUMO*`,
+        `Cliente: *${cust.name}*`,
+        `Período: ${periodText}`,
+        cust.dueDate && sum.balance > 0 ? `Vencimento: ${formatDateBR(cust.dueDate)}` : '',
+        `--------------------------------`,
+        `*PRODUTOS CONSUMIDOS:*`
+      ];
+
+      if (sum.allItems.length === 0) {
+        lines.push(`Nenhum item registrado.`);
+      } else {
+        sum.allItems.forEach(it => {
+          lines.push(`• ${it.qty}x ${it.name} (${formatBRL(it.unitPrice)} un.) — *${formatBRL(it.total)}* [${formatDateBR(it.date)}]`);
+        });
+      }
+
+      lines.push(`--------------------------------`);
+      lines.push(`Subtotal das Compras: *${formatBRL(sum.totalPurchases)}*`);
+
+      if (sum.payments.length > 0) {
+        lines.push(``);
+        lines.push(`*PAGAMENTOS REALIZADOS:*`);
+        sum.payments.forEach(p => {
+          lines.push(`• ${formatDateBR(p.date)} (${p.method}) — *-${formatBRL(p.amount)}*`);
+        });
+        lines.push(`Total Pago: *${formatBRL(sum.totalPayments)}*`);
+      } else {
+        lines.push(`Pagamentos Realizados: R$ 0,00`);
+      }
+
+      lines.push(`================================`);
+      lines.push(`*SALDO DEVEDOR ATUALIZADO: ${formatBRL(sum.balance)}*`);
+      lines.push(`================================`);
+
+      if (sum.balance > 0 && st.pixKey) {
+        lines.push(`💠 Chave Pix para acerto: *${st.pixKey}*`);
+      }
+      lines.push(`${st.storeName} agradece!`);
+
+      const whatsappText = lines.filter(l => l !== '').join('\n');
+
+      const htmlDoc = `
+        <div class="font-mono text-xs text-black space-y-2.5">
+          <div class="text-center border-b border-dashed border-gray-500 pb-2">
+            <strong class="text-sm block">${escapeHTML(storeName)}</strong>
+            <span class="font-bold">DEMONSTRATIVO DE DÉBITO / EXTRATO</span>
+            ${st.phone ? `<div class="text-[11px]">Tel/Whats: ${escapeHTML(st.phone)}</div>` : ''}
+          </div>
+
+          <div class="border-b border-dashed border-gray-500 pb-2 space-y-0.5">
+            <div><strong>Cliente:</strong> ${escapeHTML(cust.name)}</div>
+            ${cust.whatsapp ? `<div><strong>WhatsApp:</strong> ${escapeHTML(cust.whatsapp)}</div>` : ''}
+            <div><strong>Período:</strong> ${periodText}</div>
+            ${cust.dueDate && sum.balance > 0 ? `<div><strong>Vencimento:</strong> ${formatDateBR(cust.dueDate)}</div>` : ''}
+          </div>
+
+          <div class="border-b border-dashed border-gray-500 pb-2">
+            <strong class="block mb-1 underline">RELAÇÃO DE PRODUTOS CONSUMIDOS:</strong>
+            ${sum.allItems.length === 0
+              ? '<p>Nenhum produto lançado.</p>'
+              : `<div class="space-y-1">
+                  ${sum.allItems.map(it => `
+                    <div class="flex justify-between gap-2">
+                      <span>${it.qty}x ${escapeHTML(it.name)} (${formatBRL(it.unitPrice)}) <small>[${formatDateBR(it.date)}]</small></span>
+                      <span class="font-bold whitespace-nowrap">${formatBRL(it.total)}</span>
+                    </div>
+                  `).join('')}
+                </div>`
+            }
+          </div>
+
+          <div class="space-y-1 border-b border-dashed border-gray-500 pb-2">
+            <div class="flex justify-between font-bold">
+              <span>SUBTOTAL COMPRAS:</span>
+              <span>${formatBRL(sum.totalPurchases)}</span>
+            </div>
+            ${sum.payments.length > 0 ? `
+              <div class="pt-1">
+                <strong class="block underline mb-0.5">PAGAMENTOS REALIZADOS:</strong>
+                ${sum.payments.map(p => `
+                  <div class="flex justify-between">
+                    <span>${formatDateBR(p.date)} (${escapeHTML(p.method)})</span>
+                    <span>-${formatBRL(p.amount)}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="flex justify-between font-bold">
+                <span>TOTAL PAGO:</span>
+                <span>-${formatBRL(sum.totalPayments)}</span>
+              </div>
+            ` : `<div>Pagamentos realizados: R$ 0,00</div>`}
+          </div>
+
+          <div class="p-2 border border-black text-center">
+            <span class="block text-[11px]">SALDO DEVEDOR ATUALIZADO</span>
+            <strong class="text-base">${formatBRL(sum.balance)}</strong>
+          </div>
+
+          ${sum.balance > 0 && st.pixKey ? `
+            <div class="text-center text-[11px] pt-1">
+              Chave Pix: <strong>${escapeHTML(st.pixKey)}</strong>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      return { cust, sum, whatsappText, htmlDoc };
+    }
+
+    function sendCustomerStatementWhatsApp(customerId) {
+      const data = buildCustomerStatementData(customerId);
+      if (!data) return;
+      openWhatsApp(data.cust.whatsapp, data.whatsappText);
+    }
+
+    function openCustomerStatementModal(customerId) {
+      const data = buildCustomerStatementData(customerId);
+      if (!data) return;
+
+      openModal(`Extrato Detalhado — ${data.cust.name}`, `
+        <div class="space-y-4">
+          <div class="p-4 rounded-2xl bg-brand-50 border border-orange-200">
+            ${data.htmlDoc}
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button onclick="sendCustomerStatementWhatsApp('${data.cust.id}')"
+              class="py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow">
+              📲 Enviar WhatsApp
+            </button>
+            <button onclick='printDocument(${JSON.stringify(data.htmlDoc)}, ${JSON.stringify(data.whatsappText)})'
+              class="py-3 px-3 rounded-xl bg-brand-900 hover:bg-brand-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5">
+              🖨️ Imprimir Térmica
+            </button>
+            <button onclick='printDocument(${JSON.stringify(data.htmlDoc)}, "", "a4")'
+              class="py-3 px-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5">
+              📄 Salvar PDF (A4)
+            </button>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="copyTextFallback(${JSON.stringify(data.whatsappText)})"
+              class="flex-1 py-2.5 rounded-xl bg-brand-100 text-brand-900 font-bold text-xs">
+              📋 Copiar Texto do Extrato
+            </button>
+            <button onclick="closeModal(); openRegisterPaymentModal('${data.cust.id}')"
+              class="flex-1 py-2.5 rounded-xl bg-emerald-100 text-emerald-900 font-extrabold text-xs">
+              💵 Registrar Pagamento
+            </button>
+          </div>
+        </div>
+      `, 'max-w-xl');
+    }
+
+    /*************************************************************************
+     * 10. TELA 6: CALENDÁRIO / AGENDA DE COBRANÇAS
+     *************************************************************************/
+    function renderCobrancas() {
+      const debtors = state.customers
+        .map(c => ({ customer: c, sum: getCustomerSummary(c), status: getDueStatus(c) }))
+        .filter(item => item.sum.balance > 0);
+
+      const atrasadas = debtors.filter(d => d.status === 'atrasada');
+      const hoje = debtors.filter(d => d.status === 'hoje');
+      const futuras = debtors.filter(d => d.status === 'futura' || d.status === 'sem_data');
+
+      const activeList = agendaTab === 'atrasadas' ? atrasadas : (agendaTab === 'hoje' ? hoje : futuras);
+
+      return `
+        <div class="space-y-5">
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs">
+            <h2 class="text-2xl font-extrabold text-brand-900">📅 Calendário & Agenda de Cobranças</h2>
+            <p class="text-sm text-brand-800/75">Acompanhe vencimentos atrasados, cobranças de hoje e futuras.</p>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <button onclick="agendaTab = 'atrasadas'; renderCurrentPage();"
+              class="p-4 rounded-2xl border text-left transition ${
+                agendaTab === 'atrasadas' ? 'bg-rose-600 text-white border-rose-700 shadow-md' : 'bg-white border-orange-200 text-brand-900'
+              }">
+              <span class="text-xs font-bold uppercase opacity-85 block">⚠️ Atrasadas</span>
+              <strong class="text-2xl font-extrabold">${atrasadas.length}</strong>
+            </button>
+
+            <button onclick="agendaTab = 'hoje'; renderCurrentPage();"
+              class="p-4 rounded-2xl border text-left transition ${
+                agendaTab === 'hoje' ? 'bg-amber-500 text-white border-amber-600 shadow-md' : 'bg-white border-orange-200 text-brand-900'
+              }">
+              <span class="text-xs font-bold uppercase opacity-85 block">🔔 Vencem Hoje</span>
+              <strong class="text-2xl font-extrabold">${hoje.length}</strong>
+            </button>
+
+            <button onclick="agendaTab = 'futuras'; renderCurrentPage();"
+              class="p-4 rounded-2xl border text-left transition ${
+                agendaTab === 'futuras' ? 'bg-brand-900 text-white border-brand-900 shadow-md' : 'bg-white border-orange-200 text-brand-900'
+              }">
+              <span class="text-xs font-bold uppercase opacity-85 block">📆 Futuras</span>
+              <strong class="text-2xl font-extrabold">${futuras.length}</strong>
+            </button>
+          </div>
+
+          <div class="space-y-3">
+            ${activeList.length === 0
+              ? `<div class="bg-white p-8 rounded-3xl border border-orange-200 text-center text-brand-800/70">Nenhuma cobrança nesta categoria.</div>`
+              : activeList.map(({ customer, sum }) => `
+                <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 class="font-extrabold text-lg text-brand-900">${escapeHTML(customer.name)}</h3>
+                    <p class="text-xs text-brand-800/80">📱 ${escapeHTML(customer.whatsapp || 'Sem telefone')} • Vencimento: <strong>${formatDateBR(customer.dueDate)}</strong></p>
+                    <p class="mt-1 text-base font-extrabold text-rose-600">Saldo Devedor: ${formatBRL(sum.balance)}</p>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button onclick="sendCustomerStatementWhatsApp('${customer.id}')"
+                      class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold">
+                      📲 Enviar Cobrança WhatsApp
+                    </button>
+                    <button onclick="openCustomerStatementModal('${customer.id}')"
+                      class="px-3.5 py-2.5 rounded-xl bg-brand-100 hover:bg-brand-200 text-brand-900 text-xs font-bold">
+                      📄 Ver Extrato
+                    </button>
+                    <button onclick="openRescheduleModal('${customer.id}')"
+                      class="px-3.5 py-2.5 rounded-xl bg-orange-50 border border-orange-200 text-brand-900 text-xs font-bold">
+                      📅 Reagendar
+                    </button>
+                  </div>
+                </div>
+              `).join('')
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function openRescheduleModal(customerId) {
+      const cust = state.customers.find(c => c.id === customerId);
+      if (!cust) return;
+      openModal(`Reagendar Vencimento — ${cust.name}`, `
+        <form onsubmit="saveReschedule(event, '${cust.id}')" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Nova Data de Vencimento</label>
+            <input type="date" id="new-due-date" required value="${cust.dueDate || todayISO()}"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 font-bold" />
+          </div>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl bg-brand-600 text-white font-extrabold text-sm">Salvar Nova Data</button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveReschedule(e, customerId) {
+      e.preventDefault();
+      const cust = state.customers.find(c => c.id === customerId);
+      if (!cust) return;
+      cust.dueDate = document.getElementById('new-due-date').value;
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast('Data de vencimento atualizada!', 'success');
+    }
+
+    /*************************************************************************
+     * 11. TELA 7: CONTROLE DE CAIXA & FECHAMENTO DIÁRIO
+     *************************************************************************/
+    let cashFilterDate = todayISO();
+
+    function renderCaixa() {
+      let totalBalance = 0;
+      state.cashMovements.forEach(m => {
+        if (m.type === 'entrada') totalBalance += Number(m.amount) || 0;
+        else totalBalance -= Number(m.amount) || 0;
+      });
+
+      const dayMovements = state.cashMovements.filter(m => !cashFilterDate || (m.date || '').slice(0, 10) === cashFilterDate);
+
+      let inDinheiro = 0, inPix = 0, inCartao = 0, totalOut = 0;
+      dayMovements.forEach(m => {
+        const val = Number(m.amount) || 0;
+        if (m.type === 'entrada') {
+          if (m.method === 'Dinheiro') inDinheiro += val;
+          else if (m.method === 'Pix') inPix += val;
+          else if (m.method === 'Cartão') inCartao += val;
+        } else {
+          totalOut += val;
+        }
+      });
+
+      return `
+        <div class="space-y-5">
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-extrabold text-brand-900">💰 Controle de Caixa — ${escapeHTML(state.settings.storeName)}</h2>
+              <p class="text-sm text-brand-800/75">Saldo Geral Atual: <strong class="text-emerald-700 text-lg">${formatBRL(totalBalance)}</strong></p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="openCashMovementModal('entrada')" class="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm">
+                + Entrada / Suprimento
+              </button>
+              <button onclick="openCashMovementModal('saida')" class="px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm">
+                − Saída / Despesa
+              </button>
+              <button onclick="printDailyClosing()" class="px-4 py-3 rounded-2xl bg-brand-900 hover:bg-brand-800 text-white font-extrabold text-xs sm:text-sm">
+                🖨️ Fechamento Diário
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h3 class="font-extrabold text-brand-900">Resumo por Forma de Pagamento</h3>
+              <div class="flex items-center gap-2">
+                <input type="date" value="${cashFilterDate}" onchange="cashFilterDate = this.value; renderCurrentPage();"
+                  class="px-3 py-2 rounded-xl border border-orange-200 text-xs font-bold" />
+                <button onclick="cashFilterDate = ''; renderCurrentPage();" class="text-xs font-bold text-brand-600 underline">Ver Tudo</button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <span class="text-xs font-bold text-emerald-900 block">💵 Entradas Dinheiro</span>
+                <strong class="text-lg font-extrabold text-emerald-700">${formatBRL(inDinheiro)}</strong>
+              </div>
+              <div class="p-4 rounded-2xl bg-sky-50 border border-sky-200">
+                <span class="text-xs font-bold text-sky-900 block">💠 Entradas Pix</span>
+                <strong class="text-lg font-extrabold text-sky-700">${formatBRL(inPix)}</strong>
+              </div>
+              <div class="p-4 rounded-2xl bg-indigo-50 border border-indigo-200">
+                <span class="text-xs font-bold text-indigo-900 block">💳 Entradas Cartão</span>
+                <strong class="text-lg font-extrabold text-indigo-700">${formatBRL(inCartao)}</strong>
+              </div>
+              <div class="p-4 rounded-2xl bg-rose-50 border border-rose-200">
+                <span class="text-xs font-bold text-rose-900 block">📤 Saídas / Despesas</span>
+                <strong class="text-lg font-extrabold text-rose-700">-${formatBRL(totalOut)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs space-y-3">
+            <h3 class="font-extrabold text-brand-900">Movimentações do Caixa (${dayMovements.length})</h3>
+            ${dayMovements.length === 0
+              ? `<p class="text-sm text-brand-800/70">Nenhuma movimentação encontrada para esta data.</p>`
+              : `<div class="divide-y divide-orange-100">
+                  ${dayMovements.map(m => `
+                    <div class="py-3 flex items-center justify-between gap-3">
+                      <div class="min-w-0">
+                        <p class="font-bold text-sm text-brand-900 truncate">${escapeHTML(m.description)}</p>
+                        <p class="text-xs text-brand-800/70">${escapeHTML(m.category)} • ${escapeHTML(m.method)} • ${formatDateTimeBR(m.date)}</p>
+                      </div>
+                      <span class="font-extrabold text-sm whitespace-nowrap ${m.type === 'entrada' ? 'text-emerald-700' : 'text-rose-600'}">
+                        ${m.type === 'entrada' ? '+' : '-'}${formatBRL(m.amount)}
+                      </span>
+                    </div>
+                  `).join('')}
+                </div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function openCashMovementModal(type) {
+      const isEntry = type === 'entrada';
+      openModal(isEntry ? 'Registrar Entrada no Caixa' : 'Registrar Saída / Despesa', `
+        <form onsubmit="saveCashMovement(event, '${type}')" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Descrição *</label>
+            <input type="text" id="cm-desc" required placeholder="${isEntry ? 'Ex: Reforço de troco' : 'Ex: Compra de refrigerantes / Gás'}"
+              class="w-full px-4 py-3 rounded-xl border border-orange-200 font-bold" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Valor (R$) *</label>
+              <input type="text" inputmode="decimal" id="cm-amount" required placeholder="0,00"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 font-extrabold text-lg" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Forma de Pagamento</label>
+              <select id="cm-method" class="w-full px-4 py-3 rounded-xl border border-orange-200 bg-white font-bold">
+                <option value="Dinheiro">💵 Dinheiro</option>
+                <option value="Pix">💠 Pix</option>
+                <option value="Cartão">💳 Cartão</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 py-3 rounded-xl ${isEntry ? 'bg-emerald-600' : 'bg-rose-600'} text-white font-extrabold text-sm">
+              Confirmar Lançamento
+            </button>
+          </div>
+        </form>
+      `);
+    }
+
+    async function saveCashMovement(e, type) {
+      e.preventDefault();
+      const description = document.getElementById('cm-desc').value.trim();
+      const amount = parseMoney(document.getElementById('cm-amount').value);
+      const method = document.getElementById('cm-method').value;
+      if (!description || amount <= 0) return;
+
+      state.cashMovements.unshift({
+        id: generateId('cm'),
+        date: new Date().toISOString(),
+        type,
+        category: type === 'entrada' ? 'Suprimento Manual' : 'Despesa / Retirada',
+        description,
+        method,
+        amount: Number(amount.toFixed(2))
+      });
+
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast('Movimentação registrada no caixa!', 'success');
+    }
+
+    function printDailyClosing() {
+      const targetDate = cashFilterDate || todayISO();
+      const movs = state.cashMovements.filter(m => (m.date || '').slice(0, 10) === targetDate);
+      let din = 0, pix = 0, card = 0, out = 0;
+      movs.forEach(m => {
+        const v = Number(m.amount) || 0;
+        if (m.type === 'entrada') {
+          if (m.method === 'Dinheiro') din += v;
+          else if (m.method === 'Pix') pix += v;
+          else if (m.method === 'Cartão') card += v;
+        } else out += v;
+      });
+      const totalIn = din + pix + card;
+      const net = totalIn - out;
+      const st = state.settings;
+
+      const html = `
+        <div class="font-mono text-xs text-black space-y-2">
+          <div class="text-center border-b border-dashed border-gray-500 pb-2">
+            <strong class="text-sm block">${escapeHTML(st.storeName).toUpperCase()}</strong>
+            <span>FECHAMENTO DE CAIXA</span>
+            <div>Data: ${formatDateBR(targetDate)}</div>
+          </div>
+          <div class="space-y-1 border-b border-dashed border-gray-500 pb-2">
+            <div class="flex justify-between"><span>Entradas Dinheiro:</span><span>${formatBRL(din)}</span></div>
+            <div class="flex justify-between"><span>Entradas Pix:</span><span>${formatBRL(pix)}</span></div>
+            <div class="flex justify-between"><span>Entradas Cartão:</span><span>${formatBRL(card)}</span></div>
+            <div class="flex justify-between font-bold"><span>TOTAL ENTRADAS:</span><span>${formatBRL(totalIn)}</span></div>
+            <div class="flex justify-between"><span>TOTAL SAÍDAS:</span><span>-${formatBRL(out)}</span></div>
+          </div>
+          <div class="flex justify-between font-bold text-sm">
+            <span>SALDO DO DIA:</span>
+            <span>${formatBRL(net)}</span>
+          </div>
+        </div>
+      `;
+      const plain = [
+        `${st.storeName.toUpperCase()} - FECHAMENTO CAIXA`,
+        `Data: ${formatDateBR(targetDate)}`,
+        `Dinheiro: ${formatBRL(din)}`,
+        `Pix: ${formatBRL(pix)}`,
+        `Cartao: ${formatBRL(card)}`,
+        `Total Entradas: ${formatBRL(totalIn)}`,
+        `Total Saidas: -${formatBRL(out)}`,
+        `SALDO DO DIA: ${formatBRL(net)}`
+      ].join('\n');
+
+      printDocument(html, plain);
+    }
+
+    /*************************************************************************
+     * 12. TELA 9 & 10: CONFIGURAÇÕES, BACKUP & DOWNLOAD INDEX.HTML P/ VERCEL
+     *************************************************************************/
+    function renderConfig() {
+      const s = state.settings;
+      return `
+        <div class="space-y-6 max-w-4xl">
+          <div class="bg-white p-5 rounded-3xl border border-orange-200/80 shadow-xs">
+            <h2 class="text-2xl font-extrabold text-brand-900">⚙️ Configurações, Backup & Publicação Vercel</h2>
+            <p class="text-sm text-brand-800/75">Personalize os dados da <strong>${escapeHTML(s.storeName)}</strong>, faça backup ou baixe o arquivo pronto para publicar.</p>
+          </div>
+
+          <div class="bg-gradient-to-br from-brand-900 to-brand-800 text-white p-6 rounded-3xl shadow-xl space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span class="text-[11px] font-extrabold uppercase px-3 py-1 rounded-full bg-brand-600 text-white">Pronto para Vercel / GitHub / Netlify</span>
+                <h3 class="text-xl font-extrabold mt-2">🚀 Baixar Arquivo para Publicar Online</h3>
+                <p class="text-xs text-orange-200/90 mt-1 leading-relaxed">
+                  Gera o arquivo único <strong>index.html</strong> limpo e completo, pronto para subir pelo celular ou computador sem precisar configurar servidor.
+                </p>
+              </div>
+              <button onclick="downloadCleanIndexHTML()"
+                class="px-5 py-4 rounded-2xl bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-extrabold text-sm shadow-lg shrink-0 transition">
+                ⬇️ Baixar index.html pronto para Vercel / GitHub
+              </button>
+            </div>
+            <div class="bg-brand-900/60 p-4 rounded-2xl border border-brand-700 text-xs text-orange-100 space-y-1.5">
+              <p class="font-bold text-orange-300">📱 Passo a passo rápido pelo celular:</p>
+              <p>1. Toque no botão laranja acima para baixar o <strong>index.html</strong> na pasta Downloads.</p>
+              <p>2. Acesse <strong>github.com</strong> no navegador, abra seu repositório (<em>lanchonete-souza</em>) e envie o arquivo <strong>index.html</strong> na raiz.</p>
+              <p>3. Na <strong>vercel.com</strong>, faça <strong>Redeploy</strong> ou publique o repositório para atualizar o site.</p>
+            </div>
+          </div>
+
+          <form onsubmit="saveSettingsForm(event)" class="bg-white p-5 sm:p-6 rounded-3xl border border-orange-200/80 shadow-xs space-y-4">
+            <h3 class="font-extrabold text-lg text-brand-900 border-b border-orange-100 pb-2">🏪 Dados da Lanchonete (Comprovantes e Extratos)</h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Nome da Lanchonete *</label>
+                <input type="text" id="cfg-name" required value="${escapeHTML(s.storeName)}"
+                  class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-bold" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Chave Pix (Vendas e Cobranças)</label>
+                <input type="text" id="cfg-pix" value="${escapeHTML(s.pixKey || '')}" placeholder="CPF, CNPJ, Celular ou E-mail"
+                  class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none font-semibold" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Telefone / WhatsApp</label>
+                <input type="text" id="cfg-phone" value="${escapeHTML(s.phone || '')}"
+                  class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Largura Padrão de Impressão</label>
+                <select id="cfg-printer" class="w-full px-4 py-3 rounded-xl border border-orange-200 bg-white font-semibold">
+                  <option value="58mm" ${s.printerWidth === '58mm' ? 'selected' : ''}>Térmica 58mm (Bobina Estreita)</option>
+                  <option value="80mm" ${s.printerWidth === '80mm' ? 'selected' : ''}>Térmica 80mm (Bobina Larga)</option>
+                  <option value="a4" ${s.printerWidth === 'a4' ? 'selected' : ''}>Folha A4 / PDF Comercial</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Endereço Completo</label>
+              <input type="text" id="cfg-address" value="${escapeHTML(s.address || '')}"
+                class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none" />
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Mensagem de Rodapé do Comprovante</label>
+                <input type="text" id="cfg-footer" value="${escapeHTML(s.receiptFooter || '')}"
+                  class="w-full px-4 py-3 rounded-xl border border-orange-200 focus:border-brand-600 focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Logotipo da Lanchonete</label>
+                <input type="file" accept="image/*" onchange="handleLogoUpload(event)"
+                  class="w-full text-xs text-brand-800 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-brand-100 file:text-brand-900 hover:file:bg-brand-200" />
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <button type="submit" class="px-6 py-3.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-sm shadow">
+                💾 Salvar Configurações
+              </button>
+            </div>
+          </form>
+
+          <div class="bg-white p-5 sm:p-6 rounded-3xl border border-orange-200/80 shadow-xs space-y-4">
+            <div class="flex items-center justify-between border-b border-orange-100 pb-2">
+              <h3 class="font-extrabold text-lg text-brand-900">☁️ Sincronização em Nuvem (Supabase Opcional)</h3>
+              <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">Multi-aparelho</span>
+            </div>
+            <p class="text-xs text-brand-800/80 leading-relaxed">
+              Se quiser usar o mesmo banco de dados no celular e no computador simultaneamente, crie uma tabela <code class="bg-brand-50 px-1.5 py-0.5 rounded font-mono">pdv_backups (id text primary key, payload jsonb, updated_at timestamptz)</code> no Supabase e cole as chaves abaixo:
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Supabase Project URL</label>
+                <input type="url" id="cfg-sb-url" value="${escapeHTML(s.supabaseUrl || '')}" placeholder="https://xyz.supabase.co"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-orange-200 text-sm font-mono" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase text-brand-800 mb-1">Supabase Anon Public Key</label>
+                <input type="password" id="cfg-sb-key" value="${escapeHTML(s.supabaseKey || '')}" placeholder="eyJhbGciOiJIUzI1NiIs..."
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-orange-200 text-sm font-mono" />
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" onclick="saveSupabaseConfig()" class="px-4 py-2.5 rounded-xl bg-brand-900 text-white font-bold text-xs">Salvar Chaves</button>
+              <button type="button" onclick="pushToSupabase(false)" class="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs">⬆️ Enviar para Nuvem</button>
+              <button type="button" onclick="pullFromSupabase()" class="px-4 py-2.5 rounded-xl bg-sky-600 text-white font-bold text-xs">⬇️ Baixar da Nuvem</button>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 sm:p-6 rounded-3xl border border-orange-200/80 shadow-xs space-y-4">
+            <h3 class="font-extrabold text-lg text-brand-900 border-b border-orange-100 pb-2">🛡️ Backup e Restauração de Dados</h3>
+            <div class="flex flex-wrap gap-3">
+              <button onclick="exportBackupJSON()" class="px-5 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm">
+                📥 Exportar Backup (.json)
+              </button>
+              <label class="px-5 py-3 rounded-2xl bg-brand-100 hover:bg-brand-200 text-brand-900 font-bold text-sm cursor-pointer">
+                📤 Restaurar Backup (.json)
+                <input type="file" accept=".json" onchange="importBackupJSON(event)" class="hidden" />
+              </label>
+              <button onclick="loadDemoDataAgain()" class="px-4 py-3 rounded-2xl bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs">
+                🔄 Restaurar Exemplos
+              </button>
+              <button onclick="resetToCleanState()" class="px-4 py-3 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs ml-auto">
+                🧹 Limpar Todos os Dados
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveSettingsForm(e) {
+      e.preventDefault();
+      state.settings.storeName = document.getElementById('cfg-name').value.trim() || 'Lanchonete Souza';
+      state.settings.pixKey = document.getElementById('cfg-pix').value.trim();
+      state.settings.phone = document.getElementById('cfg-phone').value.trim();
+      state.settings.whatsapp = state.settings.phone.replace(/\D/g, '');
+      state.settings.printerWidth = document.getElementById('cfg-printer').value;
+      state.settings.address = document.getElementById('cfg-address').value.trim();
+      state.settings.receiptFooter = document.getElementById('cfg-footer').value.trim();
+
+      await saveState();
+      applyBrandHeader();
+      renderCurrentPage();
+      showToast('Configurações da Lanchonete Souza salvas!', 'success');
+    }
+
+    function handleLogoUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        state.settings.logoBase64 = ev.target.result;
+        await saveState();
+        applyBrandHeader();
+        showToast('Logotipo atualizado!', 'success');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function saveSupabaseConfig() {
+      state.settings.supabaseUrl = document.getElementById('cfg-sb-url').value.trim();
+      state.settings.supabaseKey = document.getElementById('cfg-sb-key').value.trim();
+      await saveState(true);
+      updateSyncIndicator('saved');
+      showToast('Chaves do Supabase salvas!', 'success');
+    }
+
+    function exportBackupJSON() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup-lanchonete-souza-${todayISO()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Backup JSON baixado!', 'success');
+    }
+
+    function importBackupJSON(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed || !parsed.settings || !Array.isArray(parsed.products)) {
+            throw new Error('Formato inválido');
+          }
+          state = parsed;
+          await saveState();
+          applyBrandHeader();
+          renderCurrentPage();
+          showToast('Backup restaurado com sucesso!', 'success');
+        } catch {
+          showToast('Arquivo de backup inválido.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    async function loadDemoDataAgain() {
+      state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+      await saveState();
+      applyBrandHeader();
+      renderCurrentPage();
+      showToast('Dados de exemplo restaurados!', 'success');
+    }
+
+    function resetToCleanState() {
+      openModal('Limpar Todos os Dados', `
+        <div class="space-y-4">
+          <p class="text-sm text-brand-900">Isso apagará vendas, produtos, clientes e movimentações atuais para iniciar do zero na <strong>Lanchonete Souza</strong>. Deseja continuar?</p>
+          <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 py-3 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button>
+            <button onclick="executeCleanReset()" class="flex-1 py-3 rounded-xl bg-rose-600 text-white font-extrabold text-sm">Sim, Zerar Tudo</button>
+          </div>
+        </div>
+      `);
+    }
+
+    async function executeCleanReset() {
+      const keepSettings = { ...state.settings };
+      state = {
+        settings: keepSettings,
+        products: [],
+        stockLogs: [],
+        customers: [],
+        sales: [],
+        cashMovements: []
+      };
+      await saveState();
+      closeModal();
+      renderCurrentPage();
+      showToast('Sistema zerado e pronto para uso real!', 'success');
+    }
+
+    function downloadCleanIndexHTML() {
+      try {
+        const clone = document.documentElement.cloneNode(true);
+        const clearIds = ['print-area', 'toast-container', 'desktop-nav', 'mobile-drawer-nav', 'main-content', 'mobile-bottom-nav', 'app-modal-body'];
+        clearIds.forEach(id => {
+          const el = clone.querySelector('#' + id);
+          if (el) el.innerHTML = '';
+        });
+        const modal = clone.querySelector('#app-modal');
+        if (modal) modal.classList.add('hidden');
+        const drawer = clone.querySelector('#mobile-drawer');
+        if (drawer) drawer.classList.add('hidden');
+
+        const cleanHTML = '<!DOCTYPE html>\n' + clone.outerHTML;
+        const blob = new Blob([cleanHTML], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'index.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Arquivo index.html limpo baixado! Pronto para subir na Vercel/GitHub.', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('Erro ao gerar o arquivo index.html.', 'error');
+      }
+    }
+
+    /*************************************************************************
+     * 13. INICIALIZAÇÃO DO SISTEMA
+     *************************************************************************/
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadState();
+      applyBrandHeader();
+      renderNavigation();
+      renderCurrentPage();
+    });
+  </script>
+</body>
+</html>
